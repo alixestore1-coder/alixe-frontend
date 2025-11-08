@@ -1,34 +1,34 @@
-import { useEffect, useState } from "react";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+﻿import { useEffect, useState } from "react";
 
 function App() {
-  const [health, setHealth] = useState("Yükleniyor...");
-  const [products, setProducts] = useState([]);
+  const [apiStatus, setApiStatus] = useState(null);
   const [email, setEmail] = useState("admin@alixe.com");
   const [password, setPassword] = useState("");
-  const [token, setToken] = useState(localStorage.getItem("alixe_token") || "");
+  const [token, setToken] = useState(localStorage.getItem("token") || "");
+  const [products, setProducts] = useState([]);
   const [newProduct, setNewProduct] = useState({
-    name: "",
+    title: "",
     description: "",
     price: "",
     image_url: "",
   });
-  const [message, setMessage] = useState("");
+  const [msg, setMsg] = useState("");
 
-  // Backend health kontrol
+  const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+  // API kontrol
   useEffect(() => {
     fetch(`${API_BASE}/health`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => setHealth(`API OK ✅ (${JSON.stringify(data)})`))
-      .catch(() => setHealth("API'a ulaşılamadı ❌"));
-  }, []);
+      .then((r) => r.json())
+      .then((data) => setApiStatus(data))
+      .catch(() => setApiStatus({ error: true }));
+  }, [API_BASE]);
 
   // Ürünleri çek
   const loadProducts = () => {
     fetch(`${API_BASE}/products`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => setProducts(data))
+      .then((r) => r.json())
+      .then(setProducts)
       .catch(() => setProducts([]));
   };
 
@@ -36,47 +36,29 @@ function App() {
     loadProducts();
   }, []);
 
-  // Login
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setMessage("");
-
+  // Giriş
+  const handleLogin = async () => {
     try {
       const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Giriş başarısız");
-      }
-
       const data = await res.json();
-      setToken(data.access_token);
-      localStorage.setItem("alixe_token", data.access_token);
-      setMessage("Admin girişi başarılı ✅");
+      if (res.ok) {
+        setToken(data.access_token);
+        localStorage.setItem("token", data.access_token);
+        setMsg("Admin girişi başarılı ✅");
+      } else {
+        setMsg(data.detail || "Giriş başarısız");
+      }
     } catch (err) {
-      setMessage(err.message || "Hata oluştu");
+      setMsg("Bağlantı hatası");
     }
   };
 
-  // Logout
-  const handleLogout = () => {
-    setToken("");
-    localStorage.removeItem("alixe_token");
-    setMessage("Çıkış yapıldı.");
-  };
-
-  // Yeni ürün ekle
-  const handleAddProduct = async (e) => {
-    e.preventDefault();
-    if (!token) {
-      setMessage("Önce admin girişi yapmalısın.");
-      return;
-    }
-
+  // Ürün ekle
+  const handleAddProduct = async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/products`, {
         method: "POST",
@@ -84,167 +66,162 @@ function App() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          name: newProduct.name,
-          description: newProduct.description,
-          price: parseFloat(newProduct.price),
-          image_url: newProduct.image_url || null,
-        }),
+        body: JSON.stringify(newProduct),
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Ürün eklenemedi");
+      const data = await res.json();
+      if (res.ok) {
+        setMsg("Ürün eklendi ✅");
+        setNewProduct({ title: "", description: "", price: "", image_url: "" });
+        loadProducts();
+      } else {
+        setMsg(data.detail || "Ürün ekleme başarısız ❌");
       }
-
-      setMessage("Ürün eklendi ✅");
-      setNewProduct({ name: "", description: "", price: "", image_url: "" });
-      loadProducts();
     } catch (err) {
-      setMessage(err.message || "Hata oluştu");
+      setMsg("Bağlantı hatası");
     }
   };
 
+  // Çıkış
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setToken("");
+    setMsg("Çıkış yapıldı");
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Header */}
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-wider">
-            A&apos;LIXE STORE
-          </h1>
-          <p className="text-xs text-slate-400">
-            Minimal. Clean. Premium streetwear.
+    <div className="min-h-screen bg-slate-950 text-white p-6">
+      <h1 className="text-2xl font-bold text-center mb-6">A'LIXE STORE</h1>
+      <p className="text-center text-slate-400 mb-8">
+        Minimal. Clean. Premium streetwear.
+      </p>
+
+      {/* API Durumu */}
+      <div className="text-right text-xs text-slate-400 mb-4">
+        API_BASE: <span className="text-emerald-400">{API_BASE}</span>
+        <br />
+        {apiStatus?.status === "ok" ? (
+          <span className="text-emerald-400">API OK ✅</span>
+        ) : (
+          <span className="text-rose-400">API'ya ulaşılamadı ❌</span>
+        )}
+      </div>
+
+      {/* Mağaza */}
+      <div className="max-w-5xl mx-auto flex flex-col gap-6">
+        <h2 className="text-lg font-semibold">Mağaza Vitrini</h2>
+        {products.length === 0 ? (
+          <p className="text-slate-400">
+            Henüz ürün yok. Admin panelinden ürün eklediğinde burada görünecek.
           </p>
-        </div>
-        <div className="text-xs text-right text-slate-400">
-          <div>{health}</div>
-          <div className="text-[10px]">
-            API_BASE: <span className="text-emerald-400">{API_BASE}</span>
-          </div>
-        </div>
-      </header>
-
-      {/* Ana içerik */}
-      <main className="flex-1 grid grid-cols-1 md:grid-cols-[2fr,1fr] gap-6 px-6 py-6">
-        {/* Mağaza / Ürünler */}
-        <section>
-          <h2 className="text-lg font-semibold mb-3">Mağaza Vitrini</h2>
-          {products.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              Henüz ürün yok. Admin panelinden ürün eklediğinde burada
-              görünecek.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {products.map((p) => (
-                <div
-                  key={p.id}
-                  className="border border-slate-800 rounded-xl p-3 flex flex-col gap-2 bg-slate-900/40"
-                >
-                  <div className="text-sm font-medium">{p.name}</div>
-                  <div className="text-xs text-slate-400 line-clamp-2">
-                    {p.description}
-                  </div>
-                  <div className="text-sm font-semibold text-emerald-400">
-                    {p.price} ₺
-                  </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {products.map((p) => (
+              <div
+                key={p.id}
+                className="border border-slate-800 rounded-xl p-3 flex flex-col gap-2 bg-slate-900/40"
+              >
+                {p.image_url && (
+                  <img
+                    src={p.image_url}
+                    alt={p.title}
+                    className="w-full h-48 object-cover rounded-lg mb-2 border border-slate-700"
+                  />
+                )}
+                <div className="text-base font-medium">{p.title}</div>
+                <div className="text-xs text-slate-400 line-clamp-2">
+                  {p.description}
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
+                <div className="text-sm font-semibold text-emerald-400">
+                  {p.price} ₺
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Admin Paneli */}
-        <aside className="border border-slate-800 rounded-2xl p-4 bg-slate-900/40 flex flex-col gap-4">
-          <h2 className="text-sm font-semibold">Admin Panel</h2>
+        {/* Admin Panel */}
+        <div className="mt-10 border border-slate-800 rounded-xl p-4 bg-slate-900/60">
+          <h2 className="text-lg font-semibold mb-3">Admin Panel</h2>
 
           {!token ? (
-            <form onSubmit={handleLogin} className="flex flex-col gap-2">
+            <>
               <input
-                className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email"
+                placeholder="E-posta"
+                className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
               />
               <input
-                className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Şifre"
+                className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
               />
               <button
-                type="submit"
-                className="mt-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-semibold rounded px-2 py-1"
+                onClick={handleLogin}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 py-2 rounded"
               >
                 Admin Giriş
               </button>
-            </form>
+            </>
           ) : (
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs text-emerald-400">
-                Admin girişi aktif ✅
-              </div>
+            <>
+              <p className="text-emerald-400 mb-2">Admin girişi aktif ✅</p>
               <button
                 onClick={handleLogout}
-                className="text-[10px] px-2 py-1 border border-slate-700 rounded"
+                className="w-full bg-rose-600 hover:bg-rose-700 py-2 rounded mb-4"
               >
                 Çıkış
               </button>
-            </div>
+
+              <input
+                value={newProduct.title}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, title: e.target.value })
+                }
+                placeholder="Ürün adı"
+                className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
+              />
+              <textarea
+                value={newProduct.description}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, description: e.target.value })
+                }
+                placeholder="Açıklama"
+                className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
+              />
+              <input
+                value={newProduct.price}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, price: e.target.value })
+                }
+                placeholder="Fiyat"
+                className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
+              />
+              <input
+                value={newProduct.image_url}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, image_url: e.target.value })
+                }
+                placeholder="(isteğe bağlı) Görsel URL"
+                className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
+              />
+              <button
+                onClick={handleAddProduct}
+                className="w-full bg-slate-100 text-black font-semibold py-2 rounded"
+              >
+                Ürün Ekle
+              </button>
+            </>
           )}
 
-          <form onSubmit={handleAddProduct} className="flex flex-col gap-2 mt-2">
-            <input
-              className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs"
-              placeholder="Ürün adı"
-              value={newProduct.name}
-              onChange={(e) =>
-                setNewProduct({ ...newProduct, name: e.target.value })
-              }
-            />
-            <textarea
-              className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs"
-              placeholder="Açıklama"
-              rows={2}
-              value={newProduct.description}
-              onChange={(e) =>
-                setNewProduct({ ...newProduct, description: e.target.value })
-              }
-            />
-            <input
-              className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs"
-              placeholder="Fiyat"
-              value={newProduct.price}
-              onChange={(e) =>
-                setNewProduct({ ...newProduct, price: e.target.value })
-              }
-            />
-            <input
-              className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs"
-              placeholder="(İsteğe bağlı) Görsel URL"
-              value={newProduct.image_url}
-              onChange={(e) =>
-                setNewProduct({ ...newProduct, image_url: e.target.value })
-              }
-            />
-            <button
-              type="submit"
-              className="mt-1 bg-slate-100 text-slate-950 text-xs font-semibold rounded px-2 py-1"
-            >
-              Ürün Ekle
-            </button>
-          </form>
+          {msg && <p className="text-sm text-center mt-3 text-slate-300">{msg}</p>}
+        </div>
+      </div>
 
-          {message && (
-            <div className="text-[10px] text-emerald-400 mt-1">{message}</div>
-          )}
-        </aside>
-      </main>
-
-      <footer className="px-6 py-3 text-[10px] text-slate-500 border-t border-slate-900">
-        A&apos;LIXE · Internal alpha build · Powered by FastAPI & React
+      <footer className="text-center text-slate-600 text-xs mt-10">
+        A'LIXE · Internal alpha build · Powered by FastAPI & React
       </footer>
     </div>
   );
