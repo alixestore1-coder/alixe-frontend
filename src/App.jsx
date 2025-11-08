@@ -16,7 +16,22 @@ function App() {
 
   const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-  // API kontrol
+  // -------- Helpers --------
+
+  const safeMessage = (detail, fallback) => {
+    if (!detail) return fallback;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail[0]?.msg || fallback;
+    }
+    if (typeof detail === "object") {
+      return detail.msg || JSON.stringify(detail);
+    }
+    return fallback;
+  };
+
+  // -------- API STATUS --------
+
   useEffect(() => {
     fetch(`${API_BASE}/health`)
       .then((r) => r.json())
@@ -24,11 +39,12 @@ function App() {
       .catch(() => setApiStatus({ error: true }));
   }, [API_BASE]);
 
-  // Ürünleri çek
+  // -------- PRODUCTS --------
+
   const loadProducts = () => {
     fetch(`${API_BASE}/products`)
-      .then((r) => r.json())
-      .then(setProducts)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setProducts(Array.isArray(data) ? data : []))
       .catch(() => setProducts([]));
   };
 
@@ -36,78 +52,111 @@ function App() {
     loadProducts();
   }, []);
 
-  // Giriş
+  // -------- AUTH --------
+
   const handleLogin = async () => {
+    setMsg("");
     try {
       const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
-      if (res.ok) {
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.access_token) {
         setToken(data.access_token);
         localStorage.setItem("token", data.access_token);
         setMsg("Admin girişi başarılı ✅");
       } else {
-        setMsg(data.detail || "Giriş başarısız");
+        setMsg(safeMessage(data.detail, "Giriş başarısız ❌"));
       }
-    } catch (err) {
-      setMsg("Bağlantı hatası");
+    } catch {
+      setMsg("Bağlantı hatası ❌");
     }
   };
 
-  // Ürün ekle
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setToken("");
+    setMsg("Çıkış yapıldı ✅");
+  };
+
+  // -------- ADD PRODUCT --------
+
   const handleAddProduct = async () => {
+    if (!token) {
+      setMsg("Önce admin girişi yapmalısın ❌");
+      return;
+    }
+
     try {
+      const payload = {
+        // Backend hangi alanı bekliyorsa ikisini de doldur: title & name
+        title: newProduct.title,
+        name: newProduct.title,
+        description: newProduct.description,
+        price: Number(newProduct.price),
+        image_url: newProduct.image_url || "",
+        is_active: true,
+      };
+
       const res = await fetch(`${API_BASE}/admin/products`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(newProduct),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
+
+      const data = await res.json().catch(() => ({}));
+
       if (res.ok) {
         setMsg("Ürün eklendi ✅");
-        setNewProduct({ title: "", description: "", price: "", image_url: "" });
+        setNewProduct({
+          title: "",
+          description: "",
+          price: "",
+          image_url: "",
+        });
         loadProducts();
       } else {
-        setMsg(data.detail || "Ürün ekleme başarısız ❌");
+        setMsg(
+          safeMessage(
+            data.detail,
+            `Ürün ekleme başarısız ❌ (kod: ${res.status})`
+          )
+        );
       }
-    } catch (err) {
-      setMsg("Bağlantı hatası");
+    } catch {
+      setMsg("Bağlantı hatası ❌");
     }
   };
 
-  // Çıkış
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    setToken("");
-    setMsg("Çıkış yapıldı");
-  };
+  // -------- UI --------
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
-      <h1 className="text-2xl font-bold text-center mb-6">A'LIXE STORE</h1>
+      <h1 className="text-2xl font-bold text-center mb-2">A&apos;LIXE STORE</h1>
       <p className="text-center text-slate-400 mb-8">
         Minimal. Clean. Premium streetwear.
       </p>
 
-      {/* API Durumu */}
+      {/* API status */}
       <div className="text-right text-xs text-slate-400 mb-4">
         API_BASE: <span className="text-emerald-400">{API_BASE}</span>
         <br />
         {apiStatus?.status === "ok" ? (
           <span className="text-emerald-400">API OK ✅</span>
         ) : (
-          <span className="text-rose-400">API'ya ulaşılamadı ❌</span>
+          <span className="text-rose-400">API&apos;ya ulaşılamadı ❌</span>
         )}
       </div>
 
-      {/* Mağaza */}
       <div className="max-w-5xl mx-auto flex flex-col gap-6">
+        {/* Storefront */}
         <h2 className="text-lg font-semibold">Mağaza Vitrini</h2>
         {products.length === 0 ? (
           <p className="text-slate-400">
@@ -115,27 +164,38 @@ function App() {
           </p>
         ) : (
           <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {products.map((p) => (
-              <div
-                key={p.id}
-                className="border border-slate-800 rounded-xl p-3 flex flex-col gap-2 bg-slate-900/40"
-              >
-                {p.image_url && (
-                  <img
-                    src={p.image_url}
-                    alt={p.title}
-                    className="w-full h-48 object-cover rounded-lg mb-2 border border-slate-700"
-                  />
-                )}
-                <div className="text-base font-medium">{p.title}</div>
-                <div className="text-xs text-slate-400 line-clamp-2">
-                  {p.description}
+            {products.map((p) => {
+              const title = p.title || p.name || "Ürün";
+              const desc = p.description || "";
+              const price = p.price ?? "";
+              const img = p.image_url || p.imageUrl || "";
+
+              return (
+                <div
+                  key={p.id}
+                  className="border border-slate-800 rounded-xl p-3 flex flex-col gap-2 bg-slate-900/40"
+                >
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={title}
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                      }}
+                      className="w-full h-48 object-cover rounded-lg mb-2 border border-slate-700"
+                    />
+                  ) : null}
+
+                  <div className="text-base font-medium">{title}</div>
+                  <div className="text-xs text-slate-400 line-clamp-2">
+                    {desc}
+                  </div>
+                  <div className="text-sm font-semibold text-emerald-400">
+                    {price} ₺
+                  </div>
                 </div>
-                <div className="text-sm font-semibold text-emerald-400">
-                  {p.price} ₺
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -186,7 +246,10 @@ function App() {
               <textarea
                 value={newProduct.description}
                 onChange={(e) =>
-                  setNewProduct({ ...newProduct, description: e.target.value })
+                  setNewProduct({
+                    ...newProduct,
+                    description: e.target.value,
+                  })
                 }
                 placeholder="Açıklama"
                 className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
@@ -202,7 +265,10 @@ function App() {
               <input
                 value={newProduct.image_url}
                 onChange={(e) =>
-                  setNewProduct({ ...newProduct, image_url: e.target.value })
+                  setNewProduct({
+                    ...newProduct,
+                    image_url: e.target.value,
+                  })
                 }
                 placeholder="(isteğe bağlı) Görsel URL"
                 className="w-full mb-2 p-2 rounded bg-slate-800 border border-slate-700"
@@ -216,12 +282,14 @@ function App() {
             </>
           )}
 
-          {msg && <p className="text-sm text-center mt-3 text-slate-300">{msg}</p>}
+          {msg && (
+            <p className="text-sm text-center mt-3 text-slate-300">{msg}</p>
+          )}
         </div>
       </div>
 
       <footer className="text-center text-slate-600 text-xs mt-10">
-        A'LIXE · Internal alpha build · Powered by FastAPI & React
+        A&apos;LIXE · Internal alpha build · Powered by FastAPI &amp; React
       </footer>
     </div>
   );
